@@ -1,25 +1,78 @@
-Rcode Here
+#****載入套件****
+library(tidyverse)
+library(rvest) 
+library(polite)
+library(jiebaR)
+library(stopwords)
+library(pdftools)
+library(tm)
+library(here)
+library(tibble)
+library(ggplot2)
+library(ggthemes)
+library(ldatuning)
+library(stm) 
+library(LDAvis)
+#****爬蟲****
+website_freedom <- "https://news.ltn.com.tw/news/world/breakingnews/4095188"
+website_unite <-"https://udn.com/news/story/123078/6694989"
+doc <- read_html(website_freedom, encoding = "UTF-8")
+scraped_text_freedom <- 
+  # 挑選網頁中要擷取的資料位置
+  rvest::html_elements(doc,css = "p:nth-child(4) ,.after_ir+ p , .time+ p,.after_ir~ p+ p , p:nth-child(9)") %>% 
+  # 將該位置的文字資料讀出
+  rvest::html_text()
+scraped_dataframe_freedom <-
+  tibble(scraped_text_freedom)
+doc1 <- read_html(website_unite, encoding = "UTF-8")
+scraped_text_unit <- 
+  # 挑選網頁中要擷取的資料位置
+  rvest::html_elements(doc1,css = ".article-content__editor") %>% 
+  # 將該位置的文字資料讀出
+  rvest::html_text()
+scraped_dataframe_unit <-
+  tibble(scraped_text_unit)
+#****斷詞****
 
-****爬蟲****
+seg_engine <- jiebaR::worker()
+seg_engine
+seg_engine_bylines <- jiebaR::worker(bylines = TRUE) # 斷詞的結果會變成list的格式
+jiebaR::new_user_word(seg_engine_bylines, words = 
+                        c("栗戰書", "韓正歲",'丁薛祥','陳敏爾','黃坤明', '李希','王滬寧','蔡奇','趙樂際','李強','習近平','胡春華'))
+#****前處理****
+segment_rmnum <- scraped_dataframe_unit %>%
+  mutate(words =  jiebaR::segment(scraped_text_unit, 
+                                  jiebar = seg_engine_bylines)) %>%
+  tidyr::unnest(words)
+
+segment_rmnum <- segment_rmnum %>% 
+  mutate(words = str_replace_all(words, pattern = "[0-9]+", replacement = "")) %>%                # <- 同學題目應該沒有要執行這幾行....
+  mutate(words=str_replace_all(words, pattern = "[a-z]+",  replacement = "" )) %>%                # <- 
+  mutate(words=str_replace_all(words, pattern = "[A-Z]+",  replacement = "" )) %>%                # <-
+  mutate(words=str_replace_all(words, pattern = "[A-Z][a-z]+",  replacement = "" )) %>% 
+  filter(words!="") %>%
+  filter(!str_detect(words, pattern = "\\d"), 
+         str_length(words) >= 2) 
+#****停用字****
+rm_stopwords <- tibble(words = c(stopwords::stopwords(language = "zh", source = "misc"),"年", "月", "日", "民國", "與", "於", "並", "為", "項"))
+
+rmnum_clear <- segment_rmnum %>% 
+  anti_join(rm_stopwords, by = "words") %>% 
+  select(words)
+
+segment_freedom <- scraped_dataframe_freedom %>%
+  mutate(words =  jiebaR::segment(scraped_text_freedom, 
+                                  jiebar = seg_engine_bylines)) %>%
+  tidyr::unnest(words)
+  rm_stopwords <- tibble(words = c(stopwords::stopwords(language = "zh", source = "misc"),"年", "月", "日", "民國", "與", "於", "並", "為", "項"))
+
+freedom_clear <- segment_freedom %>% 
+  anti_join(rm_stopwords, by = "words") %>% 
+  select(words)
 
 
 
-
-****前處理****
-
-
-
-
-
-****斷詞****
-
-
-
-
-
-
-
-****套主題模型****
+#****套主題模型****
 
 
 
