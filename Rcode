@@ -126,9 +126,8 @@ for(i in seq_along(data_all$link)){
 beepr::beep(2)
 
 # 併入原先的data_all，成為新的一欄
-data_all <- data_all %>% mutate(fulltext = fulltext)
+free_data <- data_all %>% mutate(fulltext = fulltext)
 
-# View(data_all)
 
 
 ###############################################
@@ -177,4 +176,4 @@ for(i in seq_along(data_all_02$link)){
 beepr::beep(2)
 
 # 併入原先的data_all，成為新的一欄
-data_all_02 <- data_all_02 %>% mutate(fulltext = fulltext_02)
+free_data_02 <- data_all_02 %>% mutate(fulltext = fulltext_02)
