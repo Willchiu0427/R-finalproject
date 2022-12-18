@@ -13,6 +13,231 @@ library(ggthemes)
 library(ldatuning)
 library(stm) 
 library(LDAvis)
+library(glue) # 文字資料處理，進階版的paste # 應該安裝好tidyverse就已經包含其中了
+
+my_theme <- theme_bw() + 
+  theme(text = element_text(family = "STHeitiTC-Light"))
+theme_set(my_theme)
+##爬中時"二十大"10/22~12/11
+pages <- 1:9
+full_index <- glue::glue("https://www.chinatimes.com/search/%E4%BA%8C%E5%8D%81%E5%A4%A7?page={pages}&chdtv
+")
+#path放入read_html讀取，只有讀取一個頁面，現在有3個頁面要讀取。當然一樣可以使用for loop的方式來達成。
+
+css_title <- ".title"
+css_date <- ".date"
+css_link <- ".title a"
+css_fulltext <- ".article-body"
+
+# 先製作一個空的tibble object
+data_all <- NULL
+
+# 開始一頁一頁爬取資料
+for(page in full_index){
+  base <- xml2::read_html(page)
+  # 將各自要抓取的資料存成vector，再整併成data frame
+  title <- base %>% html_elements(css = css_title) %>% 
+    html_text() %>% 
+    str_squish()
+  date <- base %>% html_elements(css = css_date) %>% 
+    html_text()
+  link <- base %>% html_nodes(css = css_link) %>% 
+    html_attr("href")
+  title <- head(title,20)
+  link <- head(link,20)
+  
+  data_this <- tibble(title = title, date = date,link=link) #
+  
+  data_all <- bind_rows(data_all, data_this)
+  Sys.sleep(time = runif(n = 1, min = 1, max = 2))
+}
+
+# 再利用剛剛取得的內文連結爬取全文。
+fulltext <- vector(mode = "character", length = nrow(data_all))
+
+for(i in seq_along(data_all$link)){
+  fulltext[i] <- read_html(data_all$link[i]) %>% 
+    html_elements(css = css_fulltext) %>% 
+    html_text() %>% 
+    str_squish()
+  Sys.sleep(time = runif(n = 1, min = 1, max = 2))
+}
+beepr::beep(2)
+
+# 併入原先的data_all，成為新的一欄
+free_data <- data_all %>% mutate(fulltext = fulltext)
+
+
+
+###############################################
+##爬中時02"二十大"10/23~12/11
+
+
+pages_02 <- 10:20
+full_index_02 <- glue::glue("https://www.chinatimes.com/search/%E4%BA%8C%E5%8D%81%E5%A4%A7?page={pages_02}&chdtv")
+
+css_title_02 <- ".title"
+css_date_02 <- ".date"
+css_link_02 <- ".title a"
+css_fulltext_02 <- ".article-body"
+
+data_all_02 <- NULL
+
+# 開始一頁一頁爬取資料
+for(page in full_index_02){
+  base_02 <- xml2::read_html(page)
+  # 將各自要抓取的資料存成vector，再整併成data frame
+  title_02 <- base_02 %>% html_elements(css = css_title_02) %>% 
+    html_text() %>% 
+    str_squish()
+  date_02 <- base_02 %>% html_elements(css = css_date_02) %>% 
+    html_text()
+  link_02 <- base_02 %>% html_nodes(css = css_link_02) %>% 
+    html_attr(name = "href") 
+  
+  title_02 <- head(title_02,20)
+  link_02 <- head(link_02,20)
+
+  data_this_02 <- tibble(title = title_02, date = date_02, link = link_02) 
+  
+  data_all_02 <- bind_rows(data_all_02, data_this_02)
+  Sys.sleep(time = runif(n = 1, min = 1, max = 2))
+}
+
+# 再利用剛剛取得的內文連結爬取全文。
+fulltext_02 <- vector(mode = "character", length = nrow(data_all_02))
+
+for(i in seq_along(data_all_02$link)){
+  fulltext_02[i] <- read_html(data_all_02$link[i]) %>% 
+    html_elements(css = css_fulltext_02) %>% 
+    html_text() %>% 
+    str_squish()
+  Sys.sleep(time = runif(n = 1, min = 1, max = 2))
+}
+beepr::beep(2)
+
+# 併入原先的data_all，成為新的一欄
+free_data_02 <- data_all_02 %>% mutate(fulltext = fulltext_02)
+
+seg_engine <- jiebaR::worker()
+seg_engine
+seg_engine_bylines <- jiebaR::worker(bylines = TRUE) # 斷詞的結果會變成list的格式
+
+
+jiebaR::new_user_word(seg_engine_bylines, words = 
+                        c("栗戰書", "韓正歲",'丁薛祥','陳敏爾','黃坤明', 
+                          '李希','王滬寧','蔡奇','趙樂際','李強','習近平','胡春華','布拉格'))
+
+###前半部######################
+
+segment_free_data <- free_data %>%
+  mutate(words =  jiebaR::segment(fulltext, 
+                                  jiebar = seg_engine_bylines)) %>%
+  tidyr::unnest(words)
+
+segment_free_data <- segment_free_data %>% 
+  mutate(words = str_replace_all(words, pattern = "[0-9]+", replacement = "")) %>%                # <- 同學題目應該沒有要執行這幾行....
+  mutate(words=str_replace_all(words, pattern = "[a-z]+",  replacement = "" )) %>%                # <- 
+  mutate(words=str_replace_all(words, pattern = "[A-Z]+",  replacement = "" )) %>%                # <-
+  mutate(words=str_replace_all(words, pattern = "[A-Z][a-z]+",  replacement = "" )) %>% 
+  filter(words!="") %>% 
+  filter(!str_detect(words, pattern = "\\d"), 
+         # 若只有一個字的token就刪除
+         str_length(words) >= 2)
+
+#移除停用字
+rm_stopwords <- tibble(words = c(stopwords::stopwords(language = "zh", source = "misc"),"年", "月", "日", 
+                                 "民國", "與", "於", "並", "為", "項","--","-","繼續",'點我','現在',"報告",'報導','新聞',"辦法"))
+
+free_data_clear <- segment_free_data %>% 
+  anti_join(rm_stopwords, by = "words") 
+
+# 以 data frame 的方式儲存TF-IDF
+tfidf_free <- free_data_clear  %>% 
+  group_by(month = lubridate::month(date)) %>% 
+  count(words) %>% 
+  ungroup() %>%
+  tidytext::bind_tf_idf(term =words, document = month, n = n)
+#TF-IDF
+tfidf_free_n20 <- tfidf_free  %>% 
+  group_by(month )  %>% 
+  top_n(20, wt = tf_idf)
+
+ggplot(tfidf_free_n20, aes(x = tidytext::reorder_within(x = words, by = tf_idf, within =month), y = tf_idf, fill = month)) + 
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ month, scales = "free") +
+  tidytext::scale_x_reordered() + 
+  labs(x = "token", y = "TF-IDF", title = "中國時報-二十大相關報導常用詞彙", subtitle = "2022/10/22~2022/12/11", caption = "Source:政治四邱暐翔") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+#後半部
+segment_free_data_02 <- free_data_02 %>%
+  mutate(words =  jiebaR::segment(fulltext, 
+                                  jiebar = seg_engine_bylines)) %>%
+  tidyr::unnest(words)
+
+segment_free_data_02 <- segment_free_data_02 %>% 
+  mutate(words = str_replace_all(words, pattern = "[0-9]+", replacement = "")) %>%                # <- 同學題目應該沒有要執行這幾行....
+  mutate(words=str_replace_all(words, pattern = "[a-z]+",  replacement = "" )) %>%                # <- 
+  mutate(words=str_replace_all(words, pattern = "[A-Z]+",  replacement = "" )) %>%                # <-
+  mutate(words=str_replace_all(words, pattern = "[A-Z][a-z]+",  replacement = "" )) %>% 
+  filter(words!="") %>% 
+  filter(!str_detect(words, pattern = "\\d"), 
+         # 若只有一個字的token就刪除
+         str_length(words) >= 2)
+
+#移除停用字
+rm_stopwords <- tibble(words = c(stopwords::stopwords(language = "zh", source = "misc"),"年", "月", "日", 
+                                 "民國", "與", "於", "並", "為", "項","--","-","繼續",'點我','現在',"報告",'報導','新聞',"辦法"))
+
+free_data_clear_02 <- segment_free_data_02 %>% 
+  anti_join(rm_stopwords, by = "words") 
+
+# 以 data frame 的方式儲存TF-IDF
+tfidf_free_02 <- free_data_clear_02  %>% 
+  group_by(month = lubridate::month(date)) %>% 
+  count(words) %>% 
+  ungroup() %>%
+  tidytext::bind_tf_idf(term =words, document = month, n = n)
+#TF-IDF
+tfidf_free_n20_02 <- tfidf_free_02  %>% 
+  group_by(month )  %>% 
+  top_n(20, wt = tf_idf)
+
+ggplot(tfidf_free_n20_02, aes(x = tidytext::reorder_within(x = words, by = tf_idf, within =month), y = tf_idf, fill = month)) + 
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ month, scales = "free") +
+  tidytext::scale_x_reordered() + 
+  labs(x = "token", y = "TF-IDF", title = "中國時報-二十大相關報導常用詞彙", subtitle = "2022/09/03~2022/10/22", caption = "Source:政治四邱暐翔") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+
+#詞頻
+count_free_02 <- tfidf_free_02  %>% 
+  group_by(month)  %>% 
+  top_n(20, wt = n)
+
+
+ggplot(count_free_02, aes(x = tidytext::reorder_within(x = words, by = n, within =month), y = n, fill = month)) + 
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ month, scales = "free") +
+  tidytext::scale_x_reordered() + 
+  labs(x = "token", y = "count", title = "中國時報-二十大相關報導常用詞彙", subtitle = "2022/09/03~2022/10/22", caption = "Source:政治四邱暐翔") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
+#詞頻
+count_free <- tfidf_free  %>% 
+  group_by(month)  %>% 
+  top_n(20, wt = n)
+
+
+ggplot(count_free, aes(x = tidytext::reorder_within(x = words, by = n, within =month), y = n, fill = month)) + 
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ month, scales = "free") +
+  tidytext::scale_x_reordered() + 
+  labs(x = "token", y = "count", title = "中國時報-二十大相關報導常用詞彙", subtitle = "2022/10/22~2022/12/11", caption = "Source:政治四邱暐翔") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  coord_flip()
 #****爬蟲****
 website_freedom <- "https://news.ltn.com.tw/news/world/breakingnews/4095188"
 website_unite <-"https://udn.com/news/story/123078/6694989"
